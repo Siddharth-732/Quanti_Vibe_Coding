@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { PRIORITIES, STATUSES, type Member, type Priority, type Status, type Task, type User } from "@/lib/types";
 
 const COLUMN_LABEL: Record<Status, string> = { todo: "To-Do", in_progress: "In Progress", done: "Done" };
@@ -34,6 +34,9 @@ const BURNOUT_LIMIT = 5;
 const initials = (name: string) => name.split(" ").map((p) => p[0]).join("").slice(0, 2).toUpperCase();
 const formatDate = (d: string) => new Date(d + "T00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" });
 
+// Floating copy of the card shown while dragging (replaces the browser's translucent drag image).
+type Drag = { task: Task; x: number; y: number; offsetX: number; offsetY: number; width: number };
+
 async function api<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, { ...init, headers: { "Content-Type": "application/json" } });
   if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? res.statusText);
@@ -47,6 +50,40 @@ export default function Board({ projectId }: { projectId: number }) {
   const [showForm, setShowForm] = useState(false);
   const [dragOver, setDragOver] = useState<Status | null>(null);
   const [error, setError] = useState("");
+  const [drag, setDrag] = useState<Drag | null>(null);
+  const [droppedId, setDroppedId] = useState<number | null>(null);
+  const blankImg = useRef<HTMLImageElement | null>(null);
+
+  // Transparent image used to hide the native drag preview.
+  useEffect(() => {
+    const img = new Image();
+    img.src = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
+    blankImg.current = img;
+  }, []);
+
+  // Make the floating card follow the cursor.
+  const dragging = drag !== null;
+  useEffect(() => {
+    if (!dragging) return;
+    const onMove = (e: DragEvent) => setDrag((d) => (d ? { ...d, x: e.clientX, y: e.clientY } : d));
+    document.addEventListener("dragover", onMove);
+    return () => document.removeEventListener("dragover", onMove);
+  }, [dragging]);
+
+  function startDrag(e: React.DragEvent<HTMLElement>, task: Task) {
+    e.dataTransfer.setData("text/plain", String(task.id));
+    e.dataTransfer.effectAllowed = "move";
+    if (blankImg.current) e.dataTransfer.setDragImage(blankImg.current, 0, 0);
+    const rect = e.currentTarget.getBoundingClientRect();
+    setDroppedId(null);
+    setDrag({ task, x: e.clientX, y: e.clientY, offsetX: e.clientX - rect.left, offsetY: e.clientY - rect.top, width: rect.width });
+  }
+
+  function endDrag() {
+    if (drag) setDroppedId(drag.task.id);
+    setDrag(null);
+    setDragOver(null);
+  }
 
   const tasksUrl = `/api/tasks?projectId=${projectId}${filter === "all" ? "" : `&priority=${filter}`}`;
   const membersUrl = `/api/projects/${projectId}/members`;
@@ -156,7 +193,8 @@ export default function Board({ projectId }: { projectId: number }) {
               }}
               onDragLeave={() => setDragOver(null)}
               onDrop={(e) => {
-                setDragOver(null);
+                // End the drag here: the card remounts in its new column, so its own onDragEnd never fires.
+                endDrag();
                 moveTask(Number(e.dataTransfer.getData("text/plain")), status);
               }}
               className={`min-h-[60vh] rounded-xl border border-t-4 p-3 transition-colors ${
@@ -172,7 +210,15 @@ export default function Board({ projectId }: { projectId: number }) {
               </h2>
               <div className="space-y-2">
                 {columnTasks.map((t) => (
-                  <TaskCard key={t.id} task={t} assignee={t.assignee_id ? memberById[t.assignee_id] : undefined} onDelete={deleteTask} />
+                  <TaskCard
+                    key={t.id}
+                    task={t}
+                    assignee={t.assignee_id ? memberById[t.assignee_id] : undefined}
+                    onDelete={deleteTask}
+                    onDragStart={startDrag}
+                    onDragEnd={endDrag}
+                    className={drag?.task.id === t.id ? "opacity-30" : droppedId === t.id ? "drop-pop" : ""}
+                  />
                 ))}
                 {columnTasks.length === 0 && <p className="py-8 text-center text-sm text-gray-400">Drop tasks here</p>}
               </div>
@@ -180,6 +226,17 @@ export default function Board({ projectId }: { projectId: number }) {
           );
         })}
       </section>
+
+      {drag && (
+        <div
+          className="pointer-events-none fixed z-50"
+          style={{ left: drag.x - drag.offsetX, top: drag.y - drag.offsetY, width: drag.width }}
+        >
+          <div className="drag-shrink" style={{ transformOrigin: `${drag.offsetX}px ${drag.offsetY}px` }}>
+            <TaskCard task={drag.task} assignee={drag.task.assignee_id ? memberById[drag.task.assignee_id] : undefined} />
+          </div>
+        </div>
+      )}
 
       {showForm && (
         <TaskForm
@@ -211,13 +268,28 @@ function Avatar({ name, burnout }: { name: string; burnout?: boolean }) {
   );
 }
 
-function TaskCard({ task, assignee, onDelete }: { task: Task; assignee?: Member; onDelete: (id: number) => void }) {
+function TaskCard({
+  task,
+  assignee,
+  onDelete,
+  onDragStart,
+  onDragEnd,
+  className = "",
+}: {
+  task: Task;
+  assignee?: Member;
+  onDelete?: (id: number) => void;
+  onDragStart?: (e: React.DragEvent<HTMLElement>, task: Task) => void;
+  onDragEnd?: () => void;
+  className?: string;
+}) {
   const overdue = task.due_date && task.status !== "done" && new Date(task.due_date + "T23:59") < new Date();
   return (
     <article
-      draggable
-      onDragStart={(e) => e.dataTransfer.setData("text/plain", String(task.id))}
-      className={`group cursor-grab rounded-lg border border-l-4 border-gray-200 ${CARD_STRIPE[task.priority]} bg-white p-3 shadow-sm hover:shadow-md active:cursor-grabbing`}
+      draggable={!!onDragStart}
+      onDragStart={(e) => onDragStart?.(e, task)}
+      onDragEnd={onDragEnd}
+      className={`group cursor-grab rounded-lg border border-l-4 border-gray-200 ${CARD_STRIPE[task.priority]} bg-white p-3 shadow-sm transition-opacity hover:shadow-md active:cursor-grabbing ${className}`}
     >
       <div className="mb-1 flex items-start justify-between gap-2">
         <span className={`rounded border px-1.5 py-0.5 text-xs font-medium capitalize ${PRIORITY_STYLE[task.priority]}`}>
@@ -225,7 +297,7 @@ function TaskCard({ task, assignee, onDelete }: { task: Task; assignee?: Member;
         </span>
         <div className="flex items-center gap-1">
           <button
-            onClick={() => confirm("Delete this task?") && onDelete(task.id)}
+            onClick={() => confirm("Delete this task?") && onDelete?.(task.id)}
             className="invisible px-1 text-gray-400 hover:text-red-600 group-hover:visible"
             aria-label="Delete task"
           >
