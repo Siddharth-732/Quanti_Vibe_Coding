@@ -1,36 +1,84 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Task Management
 
-## Getting Started
+A Kanban-style task board for personal or team productivity, built with **Next.js 16**, **PostgreSQL (Supabase)** and **Tailwind CSS**.
 
-First, run the development server:
+## Features
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+- **Kanban board**: To-Do, In Progress and Done columns with drag-and-drop. The card shrinks while you drag it and pops back when you drop it.
+- **Task cards**: priority tag, due date (shown in red when overdue), description and assignee avatar.
+- **Controls**: create a task, add users to the project, filter by priority, delete a task.
+- **Workload balancing**: each column shows how many tasks it holds. If a team member has **more than 5 tasks in progress**, their avatar pulses red and a burnout warning banner appears.
+
+## Tech stack
+
+| Layer | Choice |
+|---|---|
+| Frontend | Next.js App Router, React 19, Tailwind CSS v4 |
+| API | Next.js Route Handlers (REST endpoints under `/api`) |
+| Database | PostgreSQL on Supabase, queried with plain SQL through the `pg` driver |
+
+## Getting started
+
+1. Install dependencies:
+   ```bash
+   npm install
+   ```
+2. Create a Supabase project. Copy the connection string from **Connect → Session pooler** into `.env`:
+   ```env
+   DATABASE_URL="postgresql://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres"
+   ```
+   Special characters in the password must be URL-encoded (for example `#` becomes `%23`).
+3. Create the tables and load the demo data. **This drops any existing tables first.**
+   ```bash
+   npm run db:setup
+   ```
+4. Start the app and open http://localhost:3000:
+   ```bash
+   npm run dev
+   ```
+
+## Data model
+
+```
+users ──< project_members >── projects ──< tasks
+                (role)                     (status, priority, due_date, assignee)
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+- `projects` → `tasks` is the task hierarchy.
+- `project_members` links users to projects and gives each a role: `owner`, `member` or `viewer`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+The schema and demo data are in [`db/schema.sql`](db/schema.sql).
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## API
 
-## Learn More
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/api/tasks?projectId=1&priority=high` | List tasks, optionally filtered by priority |
+| POST | `/api/tasks` | Create a task |
+| PATCH | `/api/tasks/:id` | Update a task (including status changes from drag-and-drop) |
+| DELETE | `/api/tasks/:id` | Delete a task |
+| GET / POST | `/api/users` | List all users / create a user |
+| GET / POST | `/api/projects/:id/members` | List the team with each person's in-progress count / add a user to the project |
 
-To learn more about Next.js, take a look at the following resources:
+## Project structure
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```
+db/
+  schema.sql        tables + seed data
+  setup.mjs         runs schema.sql (npm run db:setup)
+src/
+  app/api/          REST route handlers
+  components/
+    Board.tsx       the whole board UI
+  lib/
+    db.ts           Postgres connection pool
+    types.ts        shared types and constants
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Trade-offs and limitations
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- **No login.** The app is single-tenant and opens straight to project 1. Roles are stored but not enforced, because without login the app can't tell who is making a request.
+- **Plain SQL instead of an ORM.** There are fewer moving parts and nothing to generate, but no automatic types or migrations.
+- **Built-in browser drag-and-drop instead of a drag-and-drop library.** No extra dependency, but it doesn't work with touch screens or the keyboard.
+- **Optimistic updates.** A moved card shows its new position immediately and rolls back if saving fails. There are no live updates between users; others see changes when they refresh.
+- **No ordering within a column.** Cards are ordered by when they were created.
