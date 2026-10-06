@@ -4,7 +4,26 @@ import { useCallback, useEffect, useState } from "react";
 import { PRIORITIES, STATUSES, type Member, type Priority, type Status, type Task, type User } from "@/lib/types";
 
 const COLUMN_LABEL: Record<Status, string> = { todo: "To-Do", in_progress: "In Progress", done: "Done" };
-const COLUMN_DOT: Record<Status, string> = { todo: "bg-gray-400", in_progress: "bg-amber-500", done: "bg-emerald-500" };
+const COLUMN_DOT: Record<Status, string> = { todo: "bg-sky-500", in_progress: "bg-amber-500", done: "bg-emerald-500" };
+const COLUMN_STYLE: Record<Status, string> = {
+  todo: "border-t-sky-400 bg-sky-50/70",
+  in_progress: "border-t-amber-400 bg-amber-50/70",
+  done: "border-t-emerald-400 bg-emerald-50/70",
+};
+const COUNT_STYLE: Record<Status, string> = {
+  todo: "bg-sky-100 text-sky-700",
+  in_progress: "bg-amber-100 text-amber-700",
+  done: "bg-emerald-100 text-emerald-700",
+};
+const CARD_STRIPE: Record<Priority, string> = { high: "border-l-red-400", medium: "border-l-amber-400", low: "border-l-emerald-400" };
+const AVATAR_COLORS = [
+  "bg-indigo-100 text-indigo-700",
+  "bg-pink-100 text-pink-700",
+  "bg-teal-100 text-teal-700",
+  "bg-orange-100 text-orange-700",
+  "bg-violet-100 text-violet-700",
+  "bg-sky-100 text-sky-700",
+];
 const PRIORITY_STYLE: Record<Priority, string> = {
   high: "bg-red-50 text-red-700 border-red-200",
   medium: "bg-amber-50 text-amber-700 border-amber-200",
@@ -69,13 +88,12 @@ export default function Board({ projectId }: { projectId: number }) {
     <main className="mx-auto w-full max-w-7xl p-6 space-y-5">
       {/* Header */}
       <header className="flex items-center justify-between">
-        <div>
-          <p className="text-xs uppercase tracking-wider text-gray-500">Project</p>
-          <h1 className="text-2xl font-semibold">Website Revamp</h1>
-        </div>
+        <h1 className="brand-gradient bg-clip-text text-3xl font-bold text-transparent">
+          Task Management
+        </h1>
         <button
           onClick={() => setShowForm(true)}
-          className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+          className="rounded-lg brand-gradient px-4 py-2 text-sm font-medium text-white shadow-md hover:opacity-90"
         >
           + New Task
         </button>
@@ -141,14 +159,14 @@ export default function Board({ projectId }: { projectId: number }) {
                 setDragOver(null);
                 moveTask(Number(e.dataTransfer.getData("text/plain")), status);
               }}
-              className={`min-h-[60vh] rounded-xl border p-3 transition-colors ${
-                dragOver === status ? "border-indigo-300 bg-indigo-50" : "border-gray-200 bg-gray-100/60"
+              className={`min-h-[60vh] rounded-xl border border-t-4 p-3 transition-colors ${
+                dragOver === status ? "border-indigo-300 border-t-indigo-400 bg-indigo-100" : `border-gray-200 ${COLUMN_STYLE[status]}`
               }`}
             >
               <h2 className="mb-3 flex items-center gap-2 px-1 font-semibold">
                 <span className={`h-2.5 w-2.5 rounded-full ${COLUMN_DOT[status]}`} />
                 {COLUMN_LABEL[status]}
-                <span className="rounded-full bg-white px-2 text-xs font-medium text-gray-600 border border-gray-200">
+                <span className={`rounded-full px-2 text-xs font-semibold ${COUNT_STYLE[status]}`}>
                   {columnTasks.length}
                 </span>
               </h2>
@@ -185,7 +203,7 @@ function Avatar({ name, burnout }: { name: string; burnout?: boolean }) {
     <span
       title={burnout ? `${name} has more than ${BURNOUT_LIMIT} tasks in progress` : name}
       className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${
-        burnout ? "burnout" : "bg-indigo-100 text-indigo-700"
+        burnout ? "burnout" : AVATAR_COLORS[[...name].reduce((a, c) => a + c.charCodeAt(0), 0) % AVATAR_COLORS.length]
       }`}
     >
       {initials(name)}
@@ -199,7 +217,7 @@ function TaskCard({ task, assignee, onDelete }: { task: Task; assignee?: Member;
     <article
       draggable
       onDragStart={(e) => e.dataTransfer.setData("text/plain", String(task.id))}
-      className="group cursor-grab rounded-lg border border-gray-200 bg-white p-3 shadow-sm hover:shadow active:cursor-grabbing"
+      className={`group cursor-grab rounded-lg border border-l-4 border-gray-200 ${CARD_STRIPE[task.priority]} bg-white p-3 shadow-sm hover:shadow-md active:cursor-grabbing`}
     >
       <div className="mb-1 flex items-start justify-between gap-2">
         <span className={`rounded border px-1.5 py-0.5 text-xs font-medium capitalize ${PRIORITY_STYLE[task.priority]}`}>
@@ -293,7 +311,7 @@ function TaskForm({
           <button type="button" onClick={onClose} className="rounded-lg px-4 py-2 text-sm text-gray-600 hover:bg-gray-100">
             Cancel
           </button>
-          <button className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Create</button>
+          <button className="rounded-lg brand-gradient px-4 py-2 text-sm font-medium text-white hover:opacity-90">Create</button>
         </div>
       </form>
     </div>
